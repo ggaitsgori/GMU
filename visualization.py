@@ -444,10 +444,31 @@ def render_state_table(
 
     zones = zones_from_k(k, n)
     L = X.sum(axis=0)
-    Cproj = a / (1.0 + L)
+    Cproj = a / (1.0 + L)   # used only for inactive-zone per-project display
+
+    def _zone_C(i0: int, i1: int, players: tuple) -> float:
+        """
+        Zone equilibrium marginal C_s = a_i*(m_s + (m_s-1)*L_i)/(1+L_i)^2.
+
+        Derivation: in the zone model the internal load variable is
+        Lhat_i = 1 + L_i (L_i = raw total investment on project i).
+        The FOC gives Lhat_i = a_i/C * (m1/2 + sqrt(m1^2/4 + C/a_i)),
+        which inverts exactly to C = a_i*((m_s-1)*Lhat_i + 1)/Lhat_i^2
+                                     = a_i*(m_s + (m_s-1)*L_i)/(1+L_i)^2.
+        """
+        m_s = len(players)
+        if i1 <= i0 or m_s == 0:
+            return 0.0
+        vals = []
+        for i in range(i0, i1):
+            Li = float(L[i])
+            if Li > 0:
+                vals.append(a[i] * (m_s + (m_s - 1) * Li) / (1.0 + Li) ** 2)
+        return float(np.mean(vals)) if vals else 0.0
+
     zone_meta = [dict(i0=i0, i1=i1, players=p,
                       R=float(np.sum(L[i0:i1])),
-                      C=float(np.mean(Cproj[i0:i1])) if i1 > i0 else 0.0)
+                      C=_zone_C(i0, i1, p))
                  for (i0, i1, p) in zones]
 
     C_players = _player_marginal_C(a, X, active_tol=active_tol)
