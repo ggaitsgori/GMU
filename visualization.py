@@ -1151,3 +1151,128 @@ def save_outer_history_rates_mp4(
     ani.save(out_mp4, writer=writer, dpi=dpi)
     plt.close(fig)
     print(f"Saved MP4: {out_mp4} | frames={len(display)} | fps={fps} | codec={codec}")
+
+
+# ---------------------------------------------------------------------------
+# Investment & marginal-rate table
+# ---------------------------------------------------------------------------
+
+def plot_allocation_and_rates(
+    a: np.ndarray,
+    X: np.ndarray,
+    r_players=None,
+    active_tol: float = 1e-8,
+    figsize=None,
+    fmt: str = ".4f",
+):
+    """
+    Side-by-side tables: left = investment matrix X[j,i],
+    right = marginal rate matrix c[j,i].
+
+    Color coding (applied identically to both tables):
+      - light blue  : active project  (X[j,i] > active_tol)
+      - amber       : boundary project (first zero after active region)
+      - light gray  : inactive beyond boundary  (rates shown as "—")
+    """
+    from single_player import compute_marginal_rate_matrix
+
+    a = np.asarray(a, dtype=float)
+    X = np.asarray(X, dtype=float)
+    m, n = X.shape
+
+    C = compute_marginal_rate_matrix(a, X)
+
+    # Classify each (player, project) cell
+    STATUS_ACTIVE   = "active"
+    STATUS_BOUNDARY = "boundary"
+    STATUS_INACTIVE = "inactive"
+
+    cell_status = np.full((m, n), STATUS_INACTIVE, dtype=object)
+    for j in range(m):
+        active_idx = np.where(X[j] > active_tol)[0]
+        if active_idx.size == 0:
+            continue
+        last_active = int(active_idx.max())
+        cell_status[j, active_idx] = STATUS_ACTIVE
+        if last_active + 1 < n:
+            cell_status[j, last_active + 1] = STATUS_BOUNDARY
+
+    COLOR = {
+        STATUS_ACTIVE:   "#b8d8f0",  # light blue
+        STATUS_BOUNDARY: "#ffd580",  # amber
+        STATUS_INACTIVE: "#f0f0f0",  # light gray
+        "header":        "#dcdcdc",
+    }
+
+    cell_colors = [
+        [COLOR[cell_status[j, i]] for i in range(n)]
+        for j in range(m)
+    ]
+
+    # Column labels: project index + a_i value
+    col_labels = [f"Proj {i+1}\n(a={a[i]:.4g})" for i in range(n)]
+
+    # Row labels: player index + optional resource
+    if r_players is not None:
+        r = np.asarray(r_players, dtype=float)
+        row_labels = [f"P{j+1}  (r={r[j]:.4g})" for j in range(m)]
+    else:
+        row_labels = [f"P{j+1}" for j in range(m)]
+
+    # Cell text — investments
+    x_text = [[f"{X[j, i]:{fmt}}" for i in range(n)] for j in range(m)]
+
+    # Cell text — marginal rates (show "—" for inactive cells)
+    c_text = [
+        [
+            "—" if cell_status[j, i] == STATUS_INACTIVE else f"{C[j, i]:{fmt}}"
+            for i in range(n)
+        ]
+        for j in range(m)
+    ]
+
+    if figsize is None:
+        figsize = (max(9, n * 1.7 + 2), max(2.5, m * 0.65 + 2.0))
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    for ax, title, celltext in [
+        (axes[0], "Investments  X[j, i]", x_text),
+        (axes[1], "Marginal rates  c[j, i]", c_text),
+    ]:
+        ax.axis("off")
+        tbl = ax.table(
+            cellText=celltext,
+            rowLabels=row_labels,
+            colLabels=col_labels,
+            cellLoc="center",
+            loc="center",
+            cellColours=cell_colors,
+        )
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(9)
+        tbl.scale(1, 1.5)
+
+        for (r, c), cell in tbl.get_celld().items():
+            if r == 0 or c == -1:
+                cell.set_facecolor(COLOR["header"])
+                cell.set_text_props(fontweight="bold")
+                if r == 0:
+                    cell.set_height(cell.get_height() * 1.3)
+
+        ax.set_title(title, fontsize=11, fontweight="bold", pad=10)
+
+    from matplotlib.patches import Patch
+    legend_handles = [
+        Patch(facecolor=COLOR[STATUS_ACTIVE],   label="active  (x > 0)"),
+        Patch(facecolor=COLOR[STATUS_BOUNDARY], label="boundary  (first zero)"),
+        Patch(facecolor=COLOR[STATUS_INACTIVE], label="inactive  (—)"),
+    ]
+    fig.legend(
+        handles=legend_handles, loc="lower center", ncol=3,
+        frameon=True, fontsize=9, bbox_to_anchor=(0.5, -0.04),
+    )
+
+    fig.suptitle("Allocation & Marginal Rates", fontsize=13, fontweight="bold")
+    plt.tight_layout(rect=[0, 0.05, 1, 0.96])
+    return fig
