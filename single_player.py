@@ -278,3 +278,24 @@ def compute_player_rewards(
     denom = 1.0 + L
     U = (X * (a / denom)[None, :]).sum(axis=1)
     return U, float(U.sum())
+
+
+def compute_marginal_rate_matrix(
+    a: np.ndarray,
+    X: np.ndarray,
+) -> np.ndarray:
+    """
+    Per-project, per-player marginal rate (partial derivative of player j's payoff
+    w.r.t. their own investment in project i):
+
+        c[j, i] = a_i * (1 + L_i - x_{j,i}) / (1 + L_i)^2
+
+    where L_i = sum_j X[j, i] is the total load on project i.
+
+    Returns shape (m, n).
+    """
+    a = np.asarray(a, dtype=float)
+    X = np.asarray(X, dtype=float)
+    L = X.sum(axis=0)
+    denom = (1.0 + L) ** 2
+    return a[None, :] * (1.0 + L[None, :] - X) / denom[None, :]
